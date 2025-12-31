@@ -12,7 +12,7 @@ BioChain serves as an intelligent interface for computational biologists and che
 
 1.  **Job Management**: A centralized dashboard to track status, scores, and metadata of multiple docking experiments.
 2.  **AI-Driven Analysis**: Utilizes Google's Gemini models to generate executive summaries, interpreting complex metrics like docking scores, binding efficiency, and hydrogen bond interactions into natural language insights.
-3.  **Data Visualization**: Provides interactive 3D molecular structure views and analytical charts (Bar and Radar) to assess binding properties and predicted ADMET profiles.
+3.  **Advanced Visualization**: Provides interactive 3D molecular structure views with 2-axis rotation, pan/zoom controls, hydrogen bond visualization, and snapshot export capabilities.
 4.  **On-Chain Verification**: Allows users to "sign" and record their scientific results on the Solana blockchain, creating a permanent, tamper-proof record (Proof of Computation) for intellectual property and audit trails.
 5.  **Professional Reporting**: Generates comprehensive PDF reports that include high-resolution snapshots of visualisations and the AI-generated analysis.
 
@@ -58,8 +58,9 @@ BioChain is built using a modern, performance-oriented stack:
 1.  **File Upload**: Users must be able to upload molecular data files (.pdbqt, .sdf, .out) via a drag-and-drop interface.
 2.  **Dashboard View**: The system must display a searchable and filterable list of all jobs with key metrics (Docking Score, Status).
 3.  **Visualization**:
-    *   The system must render a 3D representation of the molecule.
-    *   The system must render charts comparing binding affinities and molecular properties.
+    *   The system must render a 3D representation of the molecule with full mouse interaction (rotate X/Y, pan, zoom).
+    *   Users can toggle visual aids like Hydrogen Bonds and background modes.
+    *   Users can export the current molecular view as a high-quality PNG.
 4.  **AI Analysis**: The system must query an LLM with specific docking parameters and display the generated textual analysis.
 5.  **Wallet Integration**: Users must be able to connect a crypto wallet.
 6.  **Verification**: Authenticated users must be able to trigger a transaction that links a Job ID to a blockchain transaction hash.

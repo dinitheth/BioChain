@@ -6,7 +6,8 @@ import { MoleculeViewer } from '../components/MoleculeViewer';
 import { Charts } from '../components/Charts';
 import { SOLANA_EXPLORER_URL } from '../constants';
 import { generateReportFromStats } from '../services/geminiService';
-import { DownloadIcon, CheckCircleIcon, BeakerIcon, XMarkIcon } from '../components/Icons';
+import { fetchJobFromChain, DockingReportSchema } from '../services/solanaService';
+import { DownloadIcon, CheckCircleIcon, BeakerIcon, XMarkIcon, RefreshIcon } from '../components/Icons';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -22,6 +23,10 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
   const [aiReport, setAiReport] = useState<string>(job.reportSummary || '');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  
+  // Real Verification State
+  const [onChainData, setOnChainData] = useState<DockingReportSchema | null>(null);
+  const [isLoadingChainData, setIsLoadingChainData] = useState(false);
 
   useEffect(() => {
     if (!aiReport && job.stats) {
@@ -33,6 +38,17 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
         .finally(() => setIsGenerating(false));
     }
   }, [job, aiReport]);
+
+  // When opening Audit tab, fetch real chain data if Tx exists
+  useEffect(() => {
+    if (activeTab === 'audit' && job.txHash) {
+      setIsLoadingChainData(true);
+      fetchJobFromChain(job.txHash)
+        .then(data => setOnChainData(data))
+        .catch(err => console.error(err))
+        .finally(() => setIsLoadingChainData(false));
+    }
+  }, [activeTab, job.txHash]);
 
   const handleVerify = () => {
     if (isWalletConnected) {
@@ -416,21 +432,62 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
                             </div>
 
                             {job.txHash ? (
-                                <div className="bg-science-950/80 p-5 rounded-lg border border-solana-primary/20 relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-20 h-20 bg-solana-primary/10 blur-xl rounded-full -mr-10 -mt-10"></div>
-                                    
-                                    <span className="block text-xs font-semibold text-solana-primary mb-2 uppercase tracking-wide">Transaction Hash</span>
-                                    <a 
-                                        href={SOLANA_EXPLORER_URL + job.txHash} 
-                                        target="_blank" 
-                                        rel="noreferrer"
-                                        className="text-white hover:text-solana-secondary text-xs font-mono break-all transition-colors underline decoration-slate-700 underline-offset-4"
-                                    >
-                                        {job.txHash}
-                                    </a>
-                                    
-                                    <div className="mt-6 flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/5 px-3 py-2 rounded border border-emerald-500/10">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Confirmed block #245012
+                                <div className="space-y-6">
+                                    <div className="bg-science-950/80 p-5 rounded-lg border border-solana-primary/20 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-20 h-20 bg-solana-primary/10 blur-xl rounded-full -mr-10 -mt-10"></div>
+                                        
+                                        <span className="block text-xs font-semibold text-solana-primary mb-2 uppercase tracking-wide">Transaction Hash</span>
+                                        <a 
+                                            href={SOLANA_EXPLORER_URL + job.txHash + "?cluster=devnet"} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            className="text-white hover:text-solana-secondary text-xs font-mono break-all transition-colors underline decoration-slate-700 underline-offset-4"
+                                        >
+                                            {job.txHash}
+                                        </a>
+                                        
+                                        <div className="mt-6 flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/5 px-3 py-2 rounded border border-emerald-500/10">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Confirmed on Solana Devnet
+                                        </div>
+                                    </div>
+
+                                    {/* Live Chain Data Verification */}
+                                    <div>
+                                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Live Ledger Data</h4>
+                                        
+                                        {isLoadingChainData ? (
+                                            <div className="flex items-center gap-2 text-sm text-slate-400 p-4 border border-dashed border-white/10 rounded-lg">
+                                                <RefreshIcon className="w-4 h-4 animate-spin" /> Fetching blocks...
+                                            </div>
+                                        ) : onChainData ? (
+                                            <div className="space-y-2 text-xs font-mono">
+                                                <div className="flex justify-between p-3 bg-black/40 rounded border border-white/5 hover:border-emerald-500/30 transition-colors">
+                                                    <span className="text-slate-500">Molecule:</span>
+                                                    <span className={onChainData.moleculeName === job.moleculeName ? "text-emerald-400" : "text-red-400"}>
+                                                        {onChainData.moleculeName}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between p-3 bg-black/40 rounded border border-white/5 hover:border-emerald-500/30 transition-colors">
+                                                    <span className="text-slate-500">Docking Score:</span>
+                                                    <span className={Math.abs(onChainData.score - (job.stats?.dockingScore || 0)) < 0.001 ? "text-emerald-400" : "text-red-400"}>
+                                                        {onChainData.score.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between p-3 bg-black/40 rounded border border-white/5 hover:border-emerald-500/30 transition-colors">
+                                                    <span className="text-slate-500">Job ID:</span>
+                                                    <span className={onChainData.jobId === job.id ? "text-emerald-400" : "text-red-400"}>
+                                                        {onChainData.jobId}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-2 text-[10px] text-slate-600 text-center">
+                                                    Data retrieved directly from Solana Node
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                                                Could not verify on-chain data.
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ) : (
