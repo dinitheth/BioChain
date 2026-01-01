@@ -359,27 +359,27 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-        <div className="grid grid-cols-12 gap-8">
-            {/* Left Column: Visuals */}
-            <div className="col-span-12 xl:col-span-7 space-y-8">
-                <Card title="Molecular Visualisation" className="overflow-hidden border-white/5 bg-science-900/40">
-                    <div id="report-molecule-viewer">
-                        <MoleculeViewer />
+        <div className="flex flex-col space-y-8 max-w-6xl mx-auto">
+            
+            {/* 1. Molecular Visualisation */}
+            <Card title="Molecular Visualisation" className="overflow-hidden border-white/5 bg-science-900/40">
+                <div id="report-molecule-viewer">
+                    <MoleculeViewer />
+                </div>
+            </Card>
+            
+            {/* 2. Data Analysis (Stacked Under Visualization) */}
+            {job.stats && (
+                <Card title="Data Analysis" className="border-white/5 bg-science-900/40">
+                    <div id="report-charts">
+                        <Charts stats={job.stats} />
                     </div>
                 </Card>
-                
-                {job.stats && (
-                    <Card title="Data Analysis" className="border-white/5 bg-science-900/40">
-                        <div id="report-charts">
-                            <Charts stats={job.stats} />
-                        </div>
-                    </Card>
-                )}
-            </div>
+            )}
 
-            {/* Right Column: Text Report */}
-            <div className="col-span-12 xl:col-span-5 space-y-6">
-                <div className="flex p-1 bg-science-950 rounded-lg border border-white/5 sticky top-0 z-10 shadow-lg">
+            {/* 3. AI Analysis & Tabs (Stacked Under Charts) */}
+            <div className="space-y-6">
+                <div className="flex p-1 bg-science-950 rounded-lg border border-white/5 shadow-lg">
                     {(['summary', 'details', 'audit', 'chat'] as const).map((tab) => (
                         <button
                             key={tab}
