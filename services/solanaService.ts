@@ -6,7 +6,6 @@ import {
   clusterApiUrl,
   TransactionInstruction
 } from "@solana/web3.js";
-import { serialize, deserialize } from "borsh";
 import { Buffer } from "buffer";
 
 // ------------------------------------------------------------------
@@ -18,20 +17,9 @@ import { Buffer } from "buffer";
 const BIOCHAIN_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcQb"); 
 
 // ------------------------------------------------------------------
-// DATA SCHEMA (ANCHOR STYLE)
+// DATA SCHEMA
 // ------------------------------------------------------------------
 
-/**
- * Maps to a Rust struct:
- * 
- * #[account]
- * public struct DockingReport {
- *     pub job_id: String,
- *     pub molecule_name: String,
- *     pub score: f64,
- *     pub timestamp: i64,
- * }
- */
 export class DockingReportSchema {
   jobId: string = "";
   moleculeName: string = "";
@@ -48,22 +36,78 @@ export class DockingReportSchema {
   }
 }
 
-// Using 'any' type for the schema map to avoid TypeScript type incompatibility 
-// between 'Map<Function, any>' and borsh's 'Schema' type definition.
-const DockingReportBorsh: any = new Map([
-  [
-    DockingReportSchema,
-    {
-      kind: 'struct',
-      fields: [
-        ['jobId', 'string'],
-        ['moleculeName', 'string'],
-        ['score', 'f64'], 
-        ['timestamp', 'u64'],
-      ],
-    },
-  ],
-]);
+// ------------------------------------------------------------------
+// CUSTOM SERIALIZATION (Replaces Borsh to avoid schema version issues)
+// ------------------------------------------------------------------
+
+function serializeDockingReport(data: DockingReportSchema): Buffer {
+    const jobIdBytes = Buffer.from(data.jobId, 'utf8');
+    const moleculeNameBytes = Buffer.from(data.moleculeName, 'utf8');
+    
+    // Calculate total size:
+    // 4 bytes (u32) for jobId length + jobId bytes
+    // 4 bytes (u32) for moleculeName length + moleculeName bytes
+    // 8 bytes (f64) for score
+    // 8 bytes (u64) for timestamp
+    const size = 4 + jobIdBytes.length + 4 + moleculeNameBytes.length + 8 + 8;
+    const buffer = Buffer.alloc(size);
+    
+    let offset = 0;
+    
+    // 1. Job ID
+    buffer.writeUInt32LE(jobIdBytes.length, offset);
+    offset += 4;
+    jobIdBytes.copy(buffer, offset);
+    offset += jobIdBytes.length;
+    
+    // 2. Molecule Name
+    buffer.writeUInt32LE(moleculeNameBytes.length, offset);
+    offset += 4;
+    moleculeNameBytes.copy(buffer, offset);
+    offset += moleculeNameBytes.length;
+    
+    // 3. Score (f64)
+    buffer.writeDoubleLE(data.score, offset);
+    offset += 8;
+    
+    // 4. Timestamp (u64)
+    // Convert number to BigInt safely
+    buffer.writeBigUInt64LE(BigInt(Math.floor(data.timestamp)), offset);
+    offset += 8;
+    
+    return buffer;
+}
+
+function deserializeDockingReport(buffer: Buffer): DockingReportSchema {
+    let offset = 0;
+    
+    // 1. Job ID
+    const jobIdLen = buffer.readUInt32LE(offset);
+    offset += 4;
+    const jobId = buffer.toString('utf8', offset, offset + jobIdLen);
+    offset += jobIdLen;
+    
+    // 2. Molecule Name
+    const molNameLen = buffer.readUInt32LE(offset);
+    offset += 4;
+    const moleculeName = buffer.toString('utf8', offset, offset + molNameLen);
+    offset += molNameLen;
+    
+    // 3. Score
+    const score = buffer.readDoubleLE(offset);
+    offset += 8;
+    
+    // 4. Timestamp
+    const timestamp = Number(buffer.readBigUInt64LE(offset));
+    offset += 8;
+    
+    return new DockingReportSchema({
+        jobId,
+        moleculeName,
+        score,
+        timestamp
+    });
+}
 
 // ------------------------------------------------------------------
 // WALLET PROVIDER INTERFACE
@@ -79,23 +123,18 @@ interface SolanaProvider {
 }
 
 const getProvider = (): SolanaProvider | null => {
-  // 1. Check specifically for Phantom
   if ('phantom' in window) {
     const provider = (window as any).phantom?.solana;
     if (provider?.isPhantom) {
       return provider;
     }
   }
-
-  // 2. Fallback to standard window.solana injection, but prioritize Phantom check
   if ('solana' in window) {
     const provider = (window as any).solana;
     if (provider.isPhantom) {
         return provider;
     }
-    // Note: We avoid generic non-Phantom providers if the user specifically requested Phantom only
   }
-
   return null;
 };
 
@@ -105,8 +144,6 @@ const getProvider = (): SolanaProvider | null => {
 
 export const connectWallet = async (): Promise<string | null> => {
   let provider = getProvider();
-
-  // Retry mechanism: Wait for injection (up to 1 second)
   if (!provider) {
       for (let i = 0; i < 10; i++) {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -116,22 +153,16 @@ export const connectWallet = async (): Promise<string | null> => {
   }
   
   if (!provider) {
-    // Detect mobile environment
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
     if (isMobile) {
-        // Use Phantom Mobile Deep Link
         const currentUrl = encodeURIComponent(window.location.href);
         const ref = encodeURIComponent(window.location.origin);
         const deepLink = `https://phantom.app/ul/browse/${currentUrl}?ref=${ref}`;
-        
-        // Use a confirm dialog to give user control
         if (confirm("Phantom wallet not detected. Open in Phantom App?")) {
             window.location.href = deepLink;
         }
         return null;
     }
-
     alert("Phantom wallet not found. Please ensure the extension is installed.");
     return null;
   }
@@ -157,7 +188,6 @@ export const checkWalletConnection = async (): Promise<string | null> => {
   if (provider && provider.publicKey) {
     return provider.publicKey.toString();
   }
-  
   if (provider) {
       try {
           const resp = await provider.connect({ onlyIfTrusted: true });
@@ -171,9 +201,6 @@ export const checkWalletConnection = async (): Promise<string | null> => {
 
 /**
  * Verify Job on Solana Blockchain
- * 
- * Constructs a binary payload using Borsh serialization and writes it to the Solana Ledger
- * using the Memo program.
  */
 export const verifyJobOnChain = async (jobId: string, moleculeName: string, score: number): Promise<string> => {
   const provider = getProvider();
@@ -183,7 +210,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
 
   const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
 
-  // 1. Prepare the Payload Data
+  // 1. Prepare Data
   const reportData = new DockingReportSchema({
     jobId: jobId,
     moleculeName: moleculeName,
@@ -191,16 +218,11 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     timestamp: Date.now()
   });
 
-  // 2. Serialize to Binary (Borsh)
-  const serializedData = serialize(DockingReportBorsh, reportData);
-  
-  // Note: We use the Uint8Array directly as Buffer is not available in browser environment without polyfill
-  // We use Buffer.from to ensure it matches the expected type for TransactionInstruction
-  const instructionData = Buffer.from(serializedData);
+  // 2. Serialize to Binary (Custom)
+  const instructionData = serializeDockingReport(reportData);
 
   // 3. Construct the Transaction Instruction
   const transaction = new Transaction();
-  
   const { blockhash } = await connection.getLatestBlockhash();
   transaction.recentBlockhash = blockhash;
   transaction.feePayer = provider.publicKey;
@@ -227,15 +249,11 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
 
 /**
  * Fetch and Verify Job from Solana Blockchain
- * 
- * Reads a transaction by its signature, extracts the Memo data,
- * and deserializes it to prove the data exists on-chain.
  */
 export const fetchJobFromChain = async (signature: string): Promise<DockingReportSchema | null> => {
   const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
 
   try {
-    // 1. Fetch the parsed transaction
     const tx = await connection.getTransaction(signature, {
       maxSupportedTransactionVersion: 0,
       commitment: "confirmed"
@@ -245,8 +263,6 @@ export const fetchJobFromChain = async (signature: string): Promise<DockingRepor
       throw new Error("Transaction not found or incomplete");
     }
 
-    // 2. Find the instruction targeting the Memo Program
-    // In compiled instructions, we look for the programIndex that matches our Memo ID
     const instructions = tx.transaction.message.compiledInstructions;
     const accountKeys = tx.transaction.message.staticAccountKeys;
     
@@ -264,17 +280,9 @@ export const fetchJobFromChain = async (signature: string): Promise<DockingRepor
       throw new Error("No BioChain Memo instruction found in this transaction");
     }
 
-    // 3. Extract the binary data (Borsh)
-    // The data is stored as a Uint8Array in the instruction
+    // 3. Extract and Deserialize
     const dataBuffer = memoInstruction.data;
-
-    // 4. Deserialize
-    // We must deserialize it into the DockingReportSchema class
-    const decoded = deserialize(
-      DockingReportBorsh, 
-      DockingReportSchema, 
-      Buffer.from(dataBuffer)
-    ) as DockingReportSchema;
+    const decoded = deserializeDockingReport(Buffer.from(dataBuffer));
 
     return decoded;
 
