@@ -1,6 +1,7 @@
 import React from 'react';
 import { ViewState } from '../types';
 import { DashboardIcon, PlusIcon, BioChainLogo } from './Icons';
+import { SOLANA_NETWORK } from '../services/solanaService';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -12,6 +13,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
     { label: 'Dashboard', value: 'DASHBOARD' as ViewState, icon: DashboardIcon },
     { label: 'New Job', value: 'UPLOAD' as ViewState, icon: PlusIcon },
   ];
+
+  // Capitalize network name for display
+  const displayNetwork = SOLANA_NETWORK.charAt(0).toUpperCase() + SOLANA_NETWORK.slice(1);
 
   return (
     <aside className="w-64 bg-science-950/50 border-r border-science-800 h-screen fixed left-0 top-0 flex flex-col z-20 hidden md:flex backdrop-blur-xl">
@@ -43,8 +47,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
             <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
             <span className="font-medium text-slate-300">Operational</span>
           </div>
-          <p className="text-slate-500">Solana Devnet</p>
-          <p className="text-slate-500">Gemini 2.5 Flash</p>
+          <p className="text-slate-500">Solana {displayNetwork}</p>
+          <p className="text-slate-500">Gemini 3 Pro</p>
         </div>
       </div>
     </aside>

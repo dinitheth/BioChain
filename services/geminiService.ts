@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse, ChatSession } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Chat } from "@google/genai";
 import { MoleculeStats } from "../types";
 
 const getAiClient = () => {
@@ -66,7 +66,7 @@ The molecular weight of ${stats.molecularWeight} Da falls within the drug-like r
 export const createChatSession = (
   moleculeName: string,
   stats: MoleculeStats
-): ChatSession | null => {
+): Chat | null => {
   const ai = getAiClient();
   if (!ai) return null;
 

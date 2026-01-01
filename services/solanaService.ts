@@ -4,12 +4,15 @@ import {
   Transaction, 
   SystemProgram, 
   clusterApiUrl,
-  TransactionInstruction
+  TransactionInstruction,
+  Cluster
 } from "@solana/web3.js";
 
 // ------------------------------------------------------------------
-// ON-CHAIN PROGRAM CONFIGURATION
+// CONFIGURATION - SINGLE SOURCE OF TRUTH
 // ------------------------------------------------------------------
+
+export const SOLANA_NETWORK: Cluster = 'devnet';
 
 // We use the Memo Program to store data on-chain. 
 const BIOCHAIN_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcQb"); 
@@ -178,7 +181,8 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     throw new Error("Wallet not connected");
   }
 
-  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+  // Ensure we are connecting to the configured network
+  const connection = new Connection(clusterApiUrl(SOLANA_NETWORK), 'confirmed');
 
   // 1. Prepare Data
   const reportData = new DockingReportSchema({
@@ -207,7 +211,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
         { pubkey: provider.publicKey, isSigner: true, isWritable: true }
       ],
       programId: BIOCHAIN_PROGRAM_ID,
-      data: finalData, 
+      data: finalData as Buffer, 
     })
   );
 
@@ -217,7 +221,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     return signature;
   } catch (err) {
     console.error("Transaction failed", err);
-    throw new Error("Transaction failed. Please ensure your Phantom wallet is on 'Devnet'.");
+    throw new Error(`Transaction failed. Please ensure your Phantom wallet is set to '${SOLANA_NETWORK}' and you have SOL.`);
   }
 };
 
@@ -225,7 +229,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
  * Fetch and Verify Job from Solana Blockchain
  */
 export const fetchJobFromChain = async (signature: string): Promise<DockingReportSchema | null> => {
-  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+  const connection = new Connection(clusterApiUrl(SOLANA_NETWORK), 'confirmed');
 
   try {
     const tx = await connection.getTransaction(signature, {

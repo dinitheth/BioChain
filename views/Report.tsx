@@ -6,11 +6,11 @@ import { MoleculeViewer } from '../components/MoleculeViewer';
 import { Charts } from '../components/Charts';
 import { SOLANA_EXPLORER_URL } from '../constants';
 import { generateReportFromStats, createChatSession } from '../services/geminiService';
-import { fetchJobFromChain, DockingReportSchema } from '../services/solanaService';
+import { fetchJobFromChain, DockingReportSchema, SOLANA_NETWORK } from '../services/solanaService';
 import { DownloadIcon, CheckCircleIcon, BeakerIcon, XMarkIcon, RefreshIcon, PaperAirplaneIcon } from '../components/Icons';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import { ChatSession } from "@google/genai";
+import { Chat } from "@google/genai";
 
 interface ReportProps {
   job: DockingJob;
@@ -35,7 +35,7 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
   const [isLoadingChainData, setIsLoadingChainData] = useState(false);
 
   // Chat State
-  const [chatSession, setChatSession] = useState<ChatSession | null>(null);
+  const [chatSession, setChatSession] = useState<Chat | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatThinking, setIsChatThinking] = useState(false);
@@ -90,7 +90,6 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
     setIsChatThinking(true);
 
     try {
-        // Fix: @google/genai requires { message: string }
         const result = await chatSession.sendMessage({ message: userMsg });
         setChatMessages(prev => [...prev, { role: 'model', text: result.text || "I couldn't generate a response." }]);
     } catch (e) {
@@ -481,7 +480,7 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
                                         
                                         <span className="block text-xs font-semibold text-solana-primary mb-2 uppercase tracking-wide">Transaction Hash</span>
                                         <a 
-                                            href={SOLANA_EXPLORER_URL + job.txHash + "?cluster=devnet"} 
+                                            href={SOLANA_EXPLORER_URL + job.txHash + `?cluster=${SOLANA_NETWORK}`}
                                             target="_blank" 
                                             rel="noreferrer"
                                             className="text-white hover:text-solana-secondary text-xs font-mono break-all transition-colors underline decoration-slate-700 underline-offset-4"
@@ -490,7 +489,7 @@ export const Report: React.FC<ReportProps> = ({ job, onClose, onVerify, isWallet
                                         </a>
                                         
                                         <div className="mt-6 flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/5 px-3 py-2 rounded border border-emerald-500/10">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Confirmed on Solana Devnet
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Confirmed on Solana {SOLANA_NETWORK.charAt(0).toUpperCase() + SOLANA_NETWORK.slice(1)}
                                         </div>
                                     </div>
 
