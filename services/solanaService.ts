@@ -6,7 +6,11 @@ import {
   clusterApiUrl,
   TransactionInstruction
 } from "@solana/web3.js";
-import { Buffer } from "buffer";
+
+// Grab Buffer from global scope (injected via index.html)
+// This avoids "Module externalized" errors in Vite
+declare const window: any;
+const Buffer = window.Buffer;
 
 // ------------------------------------------------------------------
 // ON-CHAIN PROGRAM CONFIGURATION
@@ -40,7 +44,7 @@ export class DockingReportSchema {
 // CUSTOM SERIALIZATION (Replaces Borsh to avoid schema version issues)
 // ------------------------------------------------------------------
 
-function serializeDockingReport(data: DockingReportSchema): Buffer {
+function serializeDockingReport(data: DockingReportSchema): any {
     const jobIdBytes = Buffer.from(data.jobId, 'utf8');
     const moleculeNameBytes = Buffer.from(data.moleculeName, 'utf8');
     
@@ -78,7 +82,7 @@ function serializeDockingReport(data: DockingReportSchema): Buffer {
     return buffer;
 }
 
-function deserializeDockingReport(buffer: Buffer): DockingReportSchema {
+function deserializeDockingReport(buffer: any): DockingReportSchema {
     let offset = 0;
     
     // 1. Job ID

@@ -26,7 +26,7 @@ export const Charts: React.FC<ChartsProps> = ({ stats }) => {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="h-64 bg-science-900/50 rounded-lg p-2 border border-science-700/30">
         <h4 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider text-center">Key Metrics Analysis</h4>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minHeight={200} minWidth={200}>
           <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
             <XAxis type="number" stroke="#94a3b8" fontSize={10} />
@@ -42,7 +42,7 @@ export const Charts: React.FC<ChartsProps> = ({ stats }) => {
 
       <div className="h-64 bg-science-900/50 rounded-lg p-2 border border-science-700/30 flex flex-col items-center">
         <h4 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">ADMET Properties (Predicted)</h4>
-        <ResponsiveContainer width="100%" height="90%">
+        <ResponsiveContainer width="100%" height="90%" minHeight={200} minWidth={200}>
           <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
             <PolarGrid stroke="#334155" />
             <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={10} />
