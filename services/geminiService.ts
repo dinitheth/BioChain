@@ -10,6 +10,17 @@ const getAiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+// Helper for fallback content when API is down or quota exceeded
+const getFallbackReport = (moleculeName: string, stats: MoleculeStats, isQuotaError = false) => {
+  const prefix = isQuotaError ? "[Simulated Analysis - API Quota Exceeded]\n" : "[Simulated Analysis]\n";
+  return `${prefix}
+Analysis for ${moleculeName}:
+The docking score of ${stats.dockingScore} kcal/mol indicates a significant binding interaction with the target receptor.
+A binding efficiency of ${stats.bindingEfficiency} suggests the molecule utilizes its mass effectively to achieve this affinity.
+With a molecular weight of ${stats.molecularWeight} Da, the compound maintains drug-like characteristics suitable for oral bioavailability.
+The hydrogen bond donor/acceptor profile (${stats.hBondDonors}/${stats.hBondAcceptors}) supports potential specific polar interactions within the active site.`;
+};
+
 export const generateReportFromStats = async (
   moleculeName: string,
   stats: MoleculeStats
@@ -20,12 +31,7 @@ export const generateReportFromStats = async (
   if (!ai) {
     return new Promise((resolve) => {
       setTimeout(() => {
-        resolve(`[MOCK REPORT]
-Analysis for ${moleculeName}:
-The docking score of ${stats.dockingScore} kcal/mol suggests a strong binding affinity. 
-With a binding efficiency of ${stats.bindingEfficiency}, this compound is a promising candidate for further lead optimization.
-The molecular weight of ${stats.molecularWeight} Da falls within the drug-like range (Lipinski's Rule of 5).
-        `);
+        resolve(getFallbackReport(moleculeName, stats));
       }, 1500);
     });
   }
@@ -46,20 +52,33 @@ The molecular weight of ${stats.molecularWeight} Da falls within the drug-like r
       Do not include markdown formatting like ## or **. Keep it raw text or simple paragraphs.
     `;
 
+    // Switched to 'gemini-3-flash-preview' for better efficiency and lower quota usage compared to Pro.
+    // Reduced thinkingBudget to 2048 to consume fewer tokens per request.
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         thinkingConfig: {
-          thinkingBudget: 32768
+          thinkingBudget: 2048
         }
       }
     });
 
     return response.text || "No analysis generated.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return "Error generating AI report. Please check API configuration.";
+    
+    // Check for Rate Limit / Quota Exceeded errors (429)
+    // The SDK might throw different error structures, checking string content/status is safest
+    if (
+        error.status === 429 || 
+        (error.message && error.message.includes('429')) || 
+        (error.toString && error.toString().includes('Quota exceeded'))
+    ) {
+        return getFallbackReport(moleculeName, stats, true);
+    }
+
+    return "Error generating AI report. Please check API configuration or quota.";
   }
 };
 
