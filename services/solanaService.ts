@@ -9,6 +9,11 @@ import {
 } from "@solana/web3.js";
 import { Buffer } from 'buffer';
 
+// Ensure Buffer is globally available for @solana/web3.js internals
+if (typeof window !== 'undefined' && !window.Buffer) {
+    window.Buffer = Buffer;
+}
+
 // ------------------------------------------------------------------
 // CONFIGURATION - SINGLE SOURCE OF TRUTH
 // ------------------------------------------------------------------
@@ -181,13 +186,11 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     timestamp: Date.now()
   });
 
-  // 2. Serialize to JSON Bytes
-  const instructionData = serializeDockingReport(reportData);
+  // 2. Serialize to JSON Bytes (Uint8Array)
+  const instructionData = Buffer.from(serializeDockingReport(reportData));
   
-  // Explicitly convert to Buffer using the imported Buffer module. 
-  // This ensures strict compatibility with @solana/web3.js which often expects Buffer.
-  const finalData = Buffer.from(instructionData);
-
+  // Note: We use Buffer.from() because TransactionInstruction requires a Buffer, not just a Uint8Array.
+  
   // 3. Construct the Transaction Instruction
   const transaction = new Transaction();
   const { blockhash } = await connection.getLatestBlockhash();
@@ -200,7 +203,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
         { pubkey: provider.publicKey, isSigner: true, isWritable: true }
       ],
       programId: BIOCHAIN_PROGRAM_ID,
-      data: finalData, 
+      data: instructionData, 
     })
   );
 
