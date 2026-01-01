@@ -31,6 +31,7 @@ export const MoleculeViewer: React.FC = () => {
   // Interaction State
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('rotate');
   const [showHBonds, setShowHBonds] = useState(false);
+  const [selectedHBond, setSelectedHBond] = useState<string | null>(null);
 
   // Dragging State
   const [isDragging, setIsDragging] = useState(false);
@@ -53,6 +54,7 @@ export const MoleculeViewer: React.FC = () => {
     setRotation({ x: 0, y: 0 });
     setIsRotating(true);
     setShowHBonds(false);
+    setSelectedHBond(null);
     setInteractionMode('rotate');
   };
 
@@ -62,8 +64,24 @@ export const MoleculeViewer: React.FC = () => {
     setBgMode(modes[nextIndex]);
   };
 
+  // Interaction Logic for Atoms
+  const handleAtomClick = (e: React.MouseEvent, bondId: string) => {
+    e.stopPropagation(); // Stop drag event from firing on container
+    
+    // If H-bonds aren't shown, turn them on when clicking an involved atom
+    if (!showHBonds) {
+        setShowHBonds(true);
+        setSelectedHBond(bondId);
+        return;
+    }
+
+    // Toggle selection
+    setSelectedHBond(prev => prev === bondId ? null : bondId);
+  };
+
   // Mouse Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Only drag if we aren't clicking an interactive element
     setIsDragging(true);
     // Pause auto-rotation immediately when user interacts
     if (isRotating) setIsRotating(false);
@@ -85,11 +103,9 @@ export const MoleculeViewer: React.FC = () => {
         }));
     } else {
         // Rotate: Update both X and Y axes
-        // X axis rotation corresponds to vertical mouse movement (inverted for natural feel)
-        // Y axis rotation corresponds to horizontal mouse movement
         const sensitivity = 0.5;
         setRotation(prev => ({
-            x: Math.max(Math.min(prev.x - e.movementY * sensitivity, 90), -90), // Clamp X to avoid gimbal lock confusion
+            x: Math.max(Math.min(prev.x - e.movementY * sensitivity, 90), -90),
             y: (prev.y + e.movementX * sensitivity) % 360
         }));
     }
@@ -102,7 +118,6 @@ export const MoleculeViewer: React.FC = () => {
 
   // Wheel Handler for Zoom
   const handleWheel = (e: React.WheelEvent) => {
-    // Prevent default scroll behavior if inside component
     if (Math.abs(e.deltaY) > 0) {
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
@@ -114,7 +129,6 @@ export const MoleculeViewer: React.FC = () => {
     let animationFrame: number;
     if (isRotating) {
         const animate = () => {
-            // Only auto-rotate Y axis for a turntable effect
             setRotation(prev => ({ ...prev, y: (prev.y + 0.2) % 360 }));
             animationFrame = requestAnimationFrame(animate);
         };
@@ -189,11 +203,14 @@ export const MoleculeViewer: React.FC = () => {
                                 {/* Hydrogen Bond H...O (Dashed & Highlighted) */}
                                 <line 
                                     x1="60%" y1="55%" x2="33%" y2="29%" 
-                                    stroke="#facc15" 
-                                    strokeWidth="3" 
+                                    stroke={selectedHBond === 'hb1' ? '#34d399' : '#facc15'} 
+                                    strokeWidth={selectedHBond === 'hb1' ? "4" : "3"} 
                                     strokeDasharray="6,4"
                                     strokeLinecap="round"
-                                    className="animate-pulse drop-shadow-[0_0_5px_rgba(250,204,21,0.6)]"
+                                    className={`transition-all duration-300 ${selectedHBond === 'hb1' 
+                                        ? 'drop-shadow-[0_0_8px_rgba(52,211,153,0.8)]' 
+                                        : 'animate-pulse drop-shadow-[0_0_5px_rgba(250,204,21,0.6)]'
+                                    }`}
                                 />
                             </>
                         )}
@@ -201,15 +218,25 @@ export const MoleculeViewer: React.FC = () => {
 
                     {/* Simulated atoms */}
                     
-                    {/* Oxygen (Red) - Acceptor */}
+                    {/* Oxygen (Red) - Acceptor - Clickable */}
                     <div 
-                        className={`absolute top-1/4 left-1/4 w-8 h-8 bg-red-500 rounded-full shadow-lg opacity-80 transition-all duration-300 ${showHBonds ? 'ring-4 ring-yellow-400/50 shadow-[0_0_20px_rgba(250,204,21,0.6)] scale-110 z-10' : ''}`}
+                        onClick={(e) => handleAtomClick(e, 'hb1')}
+                        className={`absolute top-1/4 left-1/4 w-8 h-8 bg-red-500 rounded-full shadow-lg opacity-80 transition-all duration-300 pointer-events-auto cursor-pointer hover:scale-125
+                        ${selectedHBond === 'hb1' 
+                            ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.6)] scale-125 z-20' 
+                            : (showHBonds ? 'ring-2 ring-yellow-400/30 shadow-[0_0_20px_rgba(250,204,21,0.6)] z-10' : '')}
+                        `}
                         style={{ transform: 'translateZ(20px)' }}
                     ></div>
                     
-                    {/* Nitrogen (Blue) - Donor */}
+                    {/* Nitrogen (Blue) - Donor - Clickable */}
                     <div 
-                        className={`absolute bottom-1/3 right-1/4 w-10 h-10 bg-blue-500 rounded-full shadow-lg opacity-80 transition-all duration-300 ${showHBonds ? 'ring-4 ring-yellow-400/50 shadow-[0_0_20px_rgba(250,204,21,0.6)] scale-110 z-10' : ''}`}
+                        onClick={(e) => handleAtomClick(e, 'hb1')}
+                        className={`absolute bottom-1/3 right-1/4 w-10 h-10 bg-blue-500 rounded-full shadow-lg opacity-80 transition-all duration-300 pointer-events-auto cursor-pointer hover:scale-125
+                        ${selectedHBond === 'hb1' 
+                            ? 'ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.6)] scale-125 z-20' 
+                            : (showHBonds ? 'ring-2 ring-yellow-400/30 shadow-[0_0_20px_rgba(250,204,21,0.6)] z-10' : '')}
+                        `}
                         style={{ transform: 'translateZ(-20px)' }}
                     ></div>
                     
@@ -232,7 +259,10 @@ export const MoleculeViewer: React.FC = () => {
                     {/* H-Bond Label (Conditional) */}
                     {showHBonds && (
                          <div 
-                            className="absolute bg-black/80 backdrop-blur px-2 py-1 rounded border border-yellow-400/50 text-[10px] font-mono text-yellow-400 shadow-xl z-20" 
+                            className={`absolute px-2 py-1 rounded border text-[10px] font-mono shadow-xl z-20 transition-colors duration-300
+                            ${selectedHBond === 'hb1' 
+                                ? 'bg-emerald-900/90 border-emerald-500 text-emerald-400' 
+                                : 'bg-black/80 backdrop-blur border-yellow-400/50 text-yellow-400'}`} 
                             style={{ 
                                 top: '40%', 
                                 left: '46%', 
@@ -258,6 +288,11 @@ export const MoleculeViewer: React.FC = () => {
                 <p className={`text-[10px] font-mono ${bgMode === 'light' ? 'text-slate-500' : 'text-science-300'}`}>
                     Zoom: {Math.round(zoom * 100)}% | {interactionMode === 'rotate' ? 'Rotation' : 'Pan'} Mode
                 </p>
+                {selectedHBond && (
+                    <p className="text-[10px] text-emerald-400 font-semibold animate-fadeIn mt-1">
+                        H-Bond Selected (2.8 Å)
+                    </p>
+                )}
             </div>
         </div>
       </div>
@@ -339,7 +374,10 @@ export const MoleculeViewer: React.FC = () => {
             <div className={`w-px h-4 mx-1 ${bgMode === 'light' ? 'bg-slate-300' : 'bg-white/10'}`}></div>
 
             <button 
-                onClick={() => setShowHBonds(!showHBonds)}
+                onClick={() => {
+                    setShowHBonds(!showHBonds);
+                    if (showHBonds) setSelectedHBond(null); // Deselect if turning off
+                }}
                 className={`p-1.5 rounded-md transition-colors ${
                     showHBonds 
                     ? 'bg-yellow-500/20 text-yellow-400' 
@@ -394,8 +432,8 @@ export const MoleculeViewer: React.FC = () => {
           </div>
           {showHBonds && (
             <div className="flex items-center gap-2 pt-1 border-t border-white/10 mt-1">
-                <div className="w-4 h-0.5 border-b border-dashed border-yellow-400"></div>
-                <span className="text-[10px] font-medium uppercase tracking-wide text-yellow-400">H-Bond</span>
+                <div className={`w-4 h-0.5 border-b border-dashed ${selectedHBond ? 'border-emerald-400' : 'border-yellow-400'}`}></div>
+                <span className={`text-[10px] font-medium uppercase tracking-wide ${selectedHBond ? 'text-emerald-400' : 'text-yellow-400'}`}>H-Bond</span>
             </div>
           )}
       </div>

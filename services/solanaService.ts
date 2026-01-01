@@ -7,11 +7,6 @@ import {
   TransactionInstruction
 } from "@solana/web3.js";
 
-// Grab Buffer from global scope (injected via index.html)
-// This avoids "Module externalized" errors in Vite
-declare const window: any;
-const Buffer = window.Buffer;
-
 // ------------------------------------------------------------------
 // ON-CHAIN PROGRAM CONFIGURATION
 // ------------------------------------------------------------------
@@ -41,12 +36,20 @@ export class DockingReportSchema {
 }
 
 // ------------------------------------------------------------------
-// CUSTOM SERIALIZATION (Replaces Borsh to avoid schema version issues)
+// CUSTOM SERIALIZATION (Native Uint8Array implementation)
 // ------------------------------------------------------------------
 
-function serializeDockingReport(data: DockingReportSchema): any {
-    const jobIdBytes = Buffer.from(data.jobId, 'utf8');
-    const moleculeNameBytes = Buffer.from(data.moleculeName, 'utf8');
+const encodeString = (str: string): Uint8Array => {
+  return new TextEncoder().encode(str);
+};
+
+const decodeString = (bytes: Uint8Array): string => {
+  return new TextDecoder().decode(bytes);
+};
+
+function serializeDockingReport(data: DockingReportSchema): Uint8Array {
+    const jobIdBytes = encodeString(data.jobId);
+    const moleculeNameBytes = encodeString(data.moleculeName);
     
     // Calculate total size:
     // 4 bytes (u32) for jobId length + jobId bytes
@@ -54,55 +57,59 @@ function serializeDockingReport(data: DockingReportSchema): any {
     // 8 bytes (f64) for score
     // 8 bytes (u64) for timestamp
     const size = 4 + jobIdBytes.length + 4 + moleculeNameBytes.length + 8 + 8;
-    const buffer = Buffer.alloc(size);
+    const buffer = new ArrayBuffer(size);
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
     
     let offset = 0;
     
     // 1. Job ID
-    buffer.writeUInt32LE(jobIdBytes.length, offset);
+    view.setUint32(offset, jobIdBytes.length, true); // Little Endian
     offset += 4;
-    jobIdBytes.copy(buffer, offset);
+    bytes.set(jobIdBytes, offset);
     offset += jobIdBytes.length;
     
     // 2. Molecule Name
-    buffer.writeUInt32LE(moleculeNameBytes.length, offset);
+    view.setUint32(offset, moleculeNameBytes.length, true);
     offset += 4;
-    moleculeNameBytes.copy(buffer, offset);
+    bytes.set(moleculeNameBytes, offset);
     offset += moleculeNameBytes.length;
     
     // 3. Score (f64)
-    buffer.writeDoubleLE(data.score, offset);
+    view.setFloat64(offset, data.score, true);
     offset += 8;
     
     // 4. Timestamp (u64)
-    // Convert number to BigInt safely
-    buffer.writeBigUInt64LE(BigInt(Math.floor(data.timestamp)), offset);
+    view.setBigUint64(offset, BigInt(Math.floor(data.timestamp)), true);
     offset += 8;
     
-    return buffer;
+    return bytes;
 }
 
-function deserializeDockingReport(buffer: any): DockingReportSchema {
+function deserializeDockingReport(data: Uint8Array | Buffer): DockingReportSchema {
+    // Ensure we have a Uint8Array
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let offset = 0;
     
     // 1. Job ID
-    const jobIdLen = buffer.readUInt32LE(offset);
+    const jobIdLen = view.getUint32(offset, true);
     offset += 4;
-    const jobId = buffer.toString('utf8', offset, offset + jobIdLen);
+    const jobId = decodeString(bytes.slice(offset, offset + jobIdLen));
     offset += jobIdLen;
     
     // 2. Molecule Name
-    const molNameLen = buffer.readUInt32LE(offset);
+    const molNameLen = view.getUint32(offset, true);
     offset += 4;
-    const moleculeName = buffer.toString('utf8', offset, offset + molNameLen);
+    const moleculeName = decodeString(bytes.slice(offset, offset + molNameLen));
     offset += molNameLen;
     
     // 3. Score
-    const score = buffer.readDoubleLE(offset);
+    const score = view.getFloat64(offset, true);
     offset += 8;
     
     // 4. Timestamp
-    const timestamp = Number(buffer.readBigUInt64LE(offset));
+    const timestamp = Number(view.getBigUint64(offset, true));
     offset += 8;
     
     return new DockingReportSchema({
@@ -222,7 +229,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     timestamp: Date.now()
   });
 
-  // 2. Serialize to Binary (Custom)
+  // 2. Serialize to Binary (Native Uint8Array)
   const instructionData = serializeDockingReport(reportData);
 
   // 3. Construct the Transaction Instruction
@@ -237,17 +244,18 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
         { pubkey: provider.publicKey, isSigner: true, isWritable: true }
       ],
       programId: BIOCHAIN_PROGRAM_ID,
-      data: instructionData,
+      data: instructionData, // Uint8Array is supported by TransactionInstruction
     })
   );
 
   try {
+    // Attempting to send. If the wallet is on the wrong network, this might fail.
     const { signature } = await provider.signAndSendTransaction(transaction);
     await connection.confirmTransaction(signature, 'processed');
     return signature;
   } catch (err) {
     console.error("Transaction failed", err);
-    throw new Error("Failed to sign and send on-chain verification.");
+    throw new Error("Transaction failed. Please ensure your Phantom wallet is set to 'Devnet' and you have SOL.");
   }
 };
 
@@ -285,8 +293,8 @@ export const fetchJobFromChain = async (signature: string): Promise<DockingRepor
     }
 
     // 3. Extract and Deserialize
-    const dataBuffer = memoInstruction.data;
-    const decoded = deserializeDockingReport(Buffer.from(dataBuffer));
+    const dataBuffer = memoInstruction.data; // This is a Uint8Array in @solana/web3.js browser bundles
+    const decoded = deserializeDockingReport(dataBuffer);
 
     return decoded;
 
