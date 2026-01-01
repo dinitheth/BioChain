@@ -23,8 +23,8 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
-          // Ensure buffer works if installed via npm
-          buffer: 'buffer',
+          // 'buffer' alias removed to allow index.html polyfill to take precedence 
+          // without Vite interfering with module resolution
         }
       }
     };

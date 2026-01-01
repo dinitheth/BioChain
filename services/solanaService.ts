@@ -12,7 +12,6 @@ import {
 // ------------------------------------------------------------------
 
 // We use the Memo Program to store data on-chain. 
-// This allows us to attach arbitrary binary data to a transaction.
 const BIOCHAIN_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcQb"); 
 
 // ------------------------------------------------------------------
@@ -36,89 +35,47 @@ export class DockingReportSchema {
 }
 
 // ------------------------------------------------------------------
-// CUSTOM SERIALIZATION (Native Uint8Array implementation)
+// SERIALIZATION (JSON for Safety)
 // ------------------------------------------------------------------
-
-const encodeString = (str: string): Uint8Array => {
-  return new TextEncoder().encode(str);
-};
-
-const decodeString = (bytes: Uint8Array): string => {
-  return new TextDecoder().decode(bytes);
-};
+// Note: We use JSON stringification because Phantom and other wallets
+// try to decode Memo instruction data as UTF-8 text to display it.
+// Sending raw binary data often causes wallet extension crashes.
 
 function serializeDockingReport(data: DockingReportSchema): Uint8Array {
-    const jobIdBytes = encodeString(data.jobId);
-    const moleculeNameBytes = encodeString(data.moleculeName);
-    
-    // Calculate total size:
-    // 4 bytes (u32) for jobId length + jobId bytes
-    // 4 bytes (u32) for moleculeName length + moleculeName bytes
-    // 8 bytes (f64) for score
-    // 8 bytes (u64) for timestamp
-    const size = 4 + jobIdBytes.length + 4 + moleculeNameBytes.length + 8 + 8;
-    const buffer = new ArrayBuffer(size);
-    const view = new DataView(buffer);
-    const bytes = new Uint8Array(buffer);
-    
-    let offset = 0;
-    
-    // 1. Job ID
-    view.setUint32(offset, jobIdBytes.length, true); // Little Endian
-    offset += 4;
-    bytes.set(jobIdBytes, offset);
-    offset += jobIdBytes.length;
-    
-    // 2. Molecule Name
-    view.setUint32(offset, moleculeNameBytes.length, true);
-    offset += 4;
-    bytes.set(moleculeNameBytes, offset);
-    offset += moleculeNameBytes.length;
-    
-    // 3. Score (f64)
-    view.setFloat64(offset, data.score, true);
-    offset += 8;
-    
-    // 4. Timestamp (u64)
-    view.setBigUint64(offset, BigInt(Math.floor(data.timestamp)), true);
-    offset += 8;
-    
-    return bytes;
+    const jsonString = JSON.stringify(data);
+    return new TextEncoder().encode(jsonString);
 }
 
-function deserializeDockingReport(data: Uint8Array | Buffer): DockingReportSchema {
-    // Ensure we have a Uint8Array
-    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    let offset = 0;
+function deserializeDockingReport(data: Uint8Array | Buffer | number[]): DockingReportSchema {
+    let bytes: Uint8Array;
     
-    // 1. Job ID
-    const jobIdLen = view.getUint32(offset, true);
-    offset += 4;
-    const jobId = decodeString(bytes.slice(offset, offset + jobIdLen));
-    offset += jobIdLen;
-    
-    // 2. Molecule Name
-    const molNameLen = view.getUint32(offset, true);
-    offset += 4;
-    const moleculeName = decodeString(bytes.slice(offset, offset + molNameLen));
-    offset += molNameLen;
-    
-    // 3. Score
-    const score = view.getFloat64(offset, true);
-    offset += 8;
-    
-    // 4. Timestamp
-    const timestamp = Number(view.getBigUint64(offset, true));
-    offset += 8;
-    
-    return new DockingReportSchema({
-        jobId,
-        moleculeName,
-        score,
-        timestamp
-    });
+    if (data instanceof Uint8Array) {
+        bytes = data;
+    } else if (Array.isArray(data)) {
+        bytes = new Uint8Array(data);
+    } else {
+        // Assume Buffer or similar
+        bytes = new Uint8Array(data);
+    }
+
+    const text = new TextDecoder().decode(bytes);
+    try {
+        const json = JSON.parse(text);
+        return new DockingReportSchema(json);
+    } catch (e) {
+        console.warn("Failed to parse on-chain data as JSON, falling back or returning empty", e);
+        return new DockingReportSchema();
+    }
 }
+
+// Helper to safely get Buffer from global scope (polyfilled in index.html)
+const getBuffer = () => {
+  // @ts-ignore
+  if (typeof window !== 'undefined' && window.Buffer) return window.Buffer;
+  // @ts-ignore
+  if (typeof global !== 'undefined' && global.Buffer) return global.Buffer;
+  return null;
+};
 
 // ------------------------------------------------------------------
 // WALLET PROVIDER INTERFACE
@@ -155,6 +112,8 @@ const getProvider = (): SolanaProvider | null => {
 
 export const connectWallet = async (): Promise<string | null> => {
   let provider = getProvider();
+  
+  // Retry mechanism for provider injection
   if (!provider) {
       for (let i = 0; i < 10; i++) {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -229,8 +188,12 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     timestamp: Date.now()
   });
 
-  // 2. Serialize to Binary (Native Uint8Array)
+  // 2. Serialize to JSON Bytes
   const instructionData = serializeDockingReport(reportData);
+  
+  // Convert to Buffer if possible (Better compatibility with web3.js/Phantom)
+  const BufferPolyfill = getBuffer();
+  const finalData = BufferPolyfill ? BufferPolyfill.from(instructionData) : instructionData;
 
   // 3. Construct the Transaction Instruction
   const transaction = new Transaction();
@@ -244,18 +207,17 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
         { pubkey: provider.publicKey, isSigner: true, isWritable: true }
       ],
       programId: BIOCHAIN_PROGRAM_ID,
-      data: instructionData, // Uint8Array is supported by TransactionInstruction
+      data: finalData, 
     })
   );
 
   try {
-    // Attempting to send. If the wallet is on the wrong network, this might fail.
     const { signature } = await provider.signAndSendTransaction(transaction);
     await connection.confirmTransaction(signature, 'processed');
     return signature;
   } catch (err) {
     console.error("Transaction failed", err);
-    throw new Error("Transaction failed. Please ensure your Phantom wallet is set to 'Devnet' and you have SOL.");
+    throw new Error("Transaction failed. Please ensure your Phantom wallet is on 'Devnet'.");
   }
 };
 
@@ -293,7 +255,7 @@ export const fetchJobFromChain = async (signature: string): Promise<DockingRepor
     }
 
     // 3. Extract and Deserialize
-    const dataBuffer = memoInstruction.data; // This is a Uint8Array in @solana/web3.js browser bundles
+    const dataBuffer = memoInstruction.data; 
     const decoded = deserializeDockingReport(dataBuffer);
 
     return decoded;
