@@ -7,6 +7,7 @@ import {
   TransactionInstruction,
   Cluster
 } from "@solana/web3.js";
+import { Buffer } from 'buffer';
 
 // ------------------------------------------------------------------
 // CONFIGURATION - SINGLE SOURCE OF TRUTH
@@ -40,9 +41,6 @@ export class DockingReportSchema {
 // ------------------------------------------------------------------
 // SERIALIZATION (JSON for Safety)
 // ------------------------------------------------------------------
-// Note: We use JSON stringification because Phantom and other wallets
-// try to decode Memo instruction data as UTF-8 text to display it.
-// Sending raw binary data often causes wallet extension crashes.
 
 function serializeDockingReport(data: DockingReportSchema): Uint8Array {
     const jsonString = JSON.stringify(data);
@@ -57,7 +55,7 @@ function deserializeDockingReport(data: Uint8Array | Buffer | number[]): Docking
     } else if (Array.isArray(data)) {
         bytes = new Uint8Array(data);
     } else {
-        // Assume Buffer or similar
+        // Assume Buffer or similar, cast to Uint8Array
         bytes = new Uint8Array(data);
     }
 
@@ -70,15 +68,6 @@ function deserializeDockingReport(data: Uint8Array | Buffer | number[]): Docking
         return new DockingReportSchema();
     }
 }
-
-// Helper to safely get Buffer from global scope (polyfilled in index.html)
-const getBuffer = () => {
-  // @ts-ignore
-  if (typeof window !== 'undefined' && window.Buffer) return window.Buffer;
-  // @ts-ignore
-  if (typeof global !== 'undefined' && global.Buffer) return global.Buffer;
-  return null;
-};
 
 // ------------------------------------------------------------------
 // WALLET PROVIDER INTERFACE
@@ -116,8 +105,8 @@ const getProvider = (): SolanaProvider | null => {
 export const connectWallet = async (): Promise<string | null> => {
   let provider = getProvider();
   
-  // Retry mechanism for provider injection
   if (!provider) {
+      // Retry a few times in case injection is slow
       for (let i = 0; i < 10; i++) {
         await new Promise(resolve => setTimeout(resolve, 100));
         provider = getProvider();
@@ -195,9 +184,9 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
   // 2. Serialize to JSON Bytes
   const instructionData = serializeDockingReport(reportData);
   
-  // Convert to Buffer if possible (Better compatibility with web3.js/Phantom)
-  const BufferPolyfill = getBuffer();
-  const finalData = BufferPolyfill ? BufferPolyfill.from(instructionData) : instructionData;
+  // Explicitly convert to Buffer using the imported Buffer module. 
+  // This ensures strict compatibility with @solana/web3.js which often expects Buffer.
+  const finalData = Buffer.from(instructionData);
 
   // 3. Construct the Transaction Instruction
   const transaction = new Transaction();
@@ -211,7 +200,7 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
         { pubkey: provider.publicKey, isSigner: true, isWritable: true }
       ],
       programId: BIOCHAIN_PROGRAM_ID,
-      data: finalData as Buffer, 
+      data: finalData, 
     })
   );
 
@@ -219,9 +208,11 @@ export const verifyJobOnChain = async (jobId: string, moleculeName: string, scor
     const { signature } = await provider.signAndSendTransaction(transaction);
     await connection.confirmTransaction(signature, 'processed');
     return signature;
-  } catch (err) {
+  } catch (err: any) {
     console.error("Transaction failed", err);
-    throw new Error(`Transaction failed. Please ensure your Phantom wallet is set to '${SOLANA_NETWORK}' and you have SOL.`);
+    let msg = "Transaction failed.";
+    if (err instanceof Error) msg += " " + err.message;
+    throw new Error(msg + ` Please ensure your Phantom wallet is set to '${SOLANA_NETWORK}' and you have SOL.`);
   }
 };
 
